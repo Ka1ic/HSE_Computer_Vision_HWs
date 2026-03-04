@@ -31,9 +31,29 @@ def find_vertical_seam(
 
     for i in range(1, h):
         # Реализуйте динамику
-        pass
+        c = np.full((3, w), np.inf)
+        c[1, 1:-1] = np.abs(gray[i, 2:] - gray[i, 0:-2]) # C_u
+        c[1, 0] = np.abs(gray[i, 1] - gray[i, 0]) # по краям чтоб можно было идти вниз
+        c[1, -1] = np.abs(gray[i, -1] - gray[i, -2])
+
+        c[0, 1:] = np.abs(gray[i - 1, 1:] - gray[i, 0:-1]) # C_l
+        c[0] += c[1]
+
+        c[2, :-1] = np.abs(gray[i - 1, :-1] - gray[i, 1:]) # C_r
+        c[2] += c[1]
+
+        c[0, 1:] += m[i - 1, :-1] # m[i - 1, j - 1] + c_l
+        c[1] += m[i - 1] # m[i - 1, j] + c_u
+        c[2, :-1] += m[i - 1, 1:] # m[i - 1, j + 1] + c_r]
+
+        m[i] = np.min(c, axis=0)
+        backtrack[i] = np.argmin(c, axis=0) - 1
+  
     # Реализуйте восстановление шва
-    pass
+    seam[h - 1] = np.argmin(m[h-1])
+    for i in range(h - 2, -1, -1):
+        seam[i] = seam[i + 1] + backtrack[i + 1, seam[i + 1]]
+
     return seam
 
 
@@ -49,7 +69,11 @@ def remove_vertical_seam(image: np.ndarray, seam: np.ndarray) -> np.ndarray:
         np.ndarray: изображение размера (h, w - 1, c)
     """
     # Hint: советуем использовать булевые маски
-    pass
+    h, w, c = image.shape
+    mask = np.ones((h, w), dtype=bool)
+    mask[np.arange(h), seam] = False
+
+    return image[mask].reshape(h, w - 1, c)
 
 
 def carve_vertical(
@@ -75,7 +99,11 @@ def carve_horizontal(
 
     # Просто поверните, используйте функцию для удаления вертикальных швов
     # и поверните обратно
-    pass
+    image = image.transpose(1, 0, 2) # транспонирую
+    out = carve_vertical(image, num_seams)
+    out = out.transpose(1, 0, 2)
+
+    return out
 
 
 def main() -> None:

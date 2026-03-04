@@ -42,20 +42,29 @@ def build_target_histogram(
         np.ndarray: np.float32 массив размера 180 (кол-во бинов)
     """
     # 1. Выделяем из кадра ROI по bbox и переводим в HSV пространство
-    pass
+    frame_hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+    rio = frame_hsv[bbox[1]:bbox[1] + bbox[3], bbox[0]:bbox[0] + bbox[2]] # координаты bbox по x и y.
 
     # 2. Делаем маску для Hue:
     # маска состоит только из тех пикселей, гже
     # saturation >= SATURATION_GE_THAN
     # и value >= VALUE_GE_THAN
-    pass
+    mask = (rio[:, :, 1] >= SATURATION_GE_THAN) & (rio[:, :, 2] >= VALUE_GE_THAN)
+    hue_values = rio[:, :, 0][mask]
 
     # 3. Строим гистограмма по диапазону Hue [0, 180) и нормализация до суммы 1
     # Количество бинов == 180
     # Hint: Ипользуйте `np.histogram`
     # bins, range -- интересующие параметры
     # Не забываем провести нормализацию (сумма эл-тов == 1)
-    pass
+    hist, _ = np.histogram(hue_values, bins=180, range=(0,180))
+    hist = hist.astype(np.float32)
+    bins_sum = hist.sum()
+
+    if bins_sum > 0:
+        hist /= bins_sum
+
+    return hist
 
 
 def back_project(frame_bgr: np.ndarray, hist: np.ndarray) -> np.ndarray:
@@ -70,16 +79,19 @@ def back_project(frame_bgr: np.ndarray, hist: np.ndarray) -> np.ndarray:
         np.ndarray: Матрица вероятностей. W, H == W, H кадра (sanity check)
     """
     # 1. Перевод в HSV
-    pass
+    frame_hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
 
     # 2. Строим карту вероятностей: каждому пикселю сопоставляем hist[Hue]
-    pass
+    prob_map = hist[frame_hsv[:, :, 0]]
 
     # 3. Обнуляем вероятности по маске
     # маска состоит только из тех пикселей, гже
     # saturation >= SATURATION_GE_THAN
     # и value >= VALUE_GE_THAN
-    pass
+    mask = (frame_hsv[:, :, 1] >= SATURATION_GE_THAN) & (frame_hsv[:, :, 2] >= VALUE_GE_THAN)
+    prob_map *= mask
+
+    return prob_map
 
 
 def mean_shift(
@@ -110,7 +122,33 @@ def mean_shift(
         # 2. считаем центр масс -- новый центр нашего bbox
         # 3. пересчитываем координаты bbox
         # 4. если сдвиг окна меньше, чем eps -- останавливаемся
-        pass
+        roi = prob_map[y:y+h, x:x+w]
+        weights_sum = roi.sum()
+
+        xs = np.arange(w)
+        ys = np.arange(h)
+        c_x = (roi * xs).sum()
+        c_y = (roi * ys[:, None]).sum()
+        
+        c_x = (roi @ np.arange(0, w).reshape(-1, 1)).sum()
+        c_y = (np.arange(0, h).reshape(1, -1) @ roi).sum()
+
+        if weights_sum != 0:
+            c_x /= weights_sum
+            c_y /= weights_sum
+
+        x_new = round(x + c_x - w / 2)
+        y_new = round(y + c_y - h / 2)
+
+        x_new, y_new, w, h = clamp_window(x_new, y_new, w, h, img_w, img_h)
+
+        shift = np.sqrt((x_new - x) ** 2 + (y_new - y) ** 2)
+
+        x, y = x_new, y_new
+
+        if shift < eps:
+            return (x, y, w, h), i
+        
 
     return (x, y, w, h), max_iter
 
